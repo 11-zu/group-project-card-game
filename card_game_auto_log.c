@@ -336,18 +336,129 @@ void round3(Game *game) {
     logMsg("第 3 局结束。\n");
 }
 
-// 第四局：每人使用剩下的 3 张牌，总和最小的玩家扣 4 分
+// ======================= 三张牌牌型比较 =======================
+
+typedef enum {
+    HAND_HIGH_CARD = 0,        // 散牌
+    HAND_PAIR = 1,             // 对子
+    HAND_STRAIGHT = 2,         // 顺子
+    HAND_FLUSH = 3,            // 同花
+    HAND_STRAIGHT_FLUSH = 4,   // 同花顺
+    HAND_TRIPLE = 5            // 三条
+} HandType;
+
+typedef struct {
+    HandType type;
+    Card cards[3];   // 已按点数从大到小、花色从大到小排序
+} HandRank;
+
+const char *handTypeName(HandType type) {
+    switch (type) {
+        case HAND_HIGH_CARD:      return "散牌";
+        case HAND_PAIR:           return "对子";
+        case HAND_STRAIGHT:       return "顺子";
+        case HAND_FLUSH:          return "同花";
+        case HAND_STRAIGHT_FLUSH: return "同花顺";
+        case HAND_TRIPLE:         return "三条";
+        default:                  return "未知牌型";
+    }
+}
+
+// 常见花色大小：黑桃 > 红心 > 梅花 > 方块
+int suitRank(Suit s) {
+    switch (s) {
+        case SPADE:   return 4;
+        case HEART:   return 3;
+        case CLUB:    return 2;
+        case DIAMOND: return 1;
+        default:      return 0;
+    }
+}
+
+int compareCardDescending(const void *a, const void *b) {
+    const Card *ca = (const Card *)a;
+    const Card *cb = (const Card *)b;
+
+    if (ca->value != cb->value) {
+        return cb->value - ca->value;
+    }
+    return suitRank(cb->suit) - suitRank(ca->suit);
+}
+
+int compareCardAscending(const void *a, const void *b) {
+    const Card *ca = (const Card *)a;
+    const Card *cb = (const Card *)b;
+    return ca->value - cb->value;
+}
+
+HandRank evaluateThreeCardHand(Card hand[]) {
+    HandRank rank;
+    Card sortedAsc[3];
+
+    for (int i = 0; i < 3; i++) {
+        sortedAsc[i] = hand[i];
+        rank.cards[i] = hand[i];
+    }
+    qsort(sortedAsc, 3, sizeof(Card), compareCardAscending);
+
+    int v0 = sortedAsc[0].value;
+    int v1 = sortedAsc[1].value;
+    int v2 = sortedAsc[2].value;
+    int isTriple   = (v0 == v1 && v1 == v2);
+    int isStraight = (v2 - v1 == 1 && v1 - v0 == 1);
+    int isFlush    = (sortedAsc[0].suit == sortedAsc[1].suit &&
+                      sortedAsc[1].suit == sortedAsc[2].suit);
+    int isPair     = (v0 == v1 || v1 == v2);
+
+    if (isTriple) {
+        rank.type = HAND_TRIPLE;
+    } else if (isStraight && isFlush) {
+        rank.type = HAND_STRAIGHT_FLUSH;
+    } else if (isFlush) {
+        rank.type = HAND_FLUSH;
+    } else if (isStraight) {
+        rank.type = HAND_STRAIGHT;
+    } else if (isPair) {
+        rank.type = HAND_PAIR;
+    } else {
+        rank.type = HAND_HIGH_CARD;
+    }
+
+    // 同牌型时按“点数优先、花色其次”从大到小逐张比较
+    qsort(rank.cards, 3, sizeof(Card), compareCardDescending);
+    return rank;
+}
+
+// 返回正数表示 a 大于 b，负数表示 a 小于 b，0 表示相同
+int compareThreeCardHands(const HandRank *a, const HandRank *b) {
+    if (a->type != b->type) {
+        return (int)a->type - (int)b->type;
+    }
+
+    for (int i = 0; i < 3; i++) {
+        if (a->cards[i].value != b->cards[i].value) {
+            return a->cards[i].value - b->cards[i].value;
+        }
+        int sa = suitRank(a->cards[i].suit);
+        int sb = suitRank(b->cards[i].suit);
+        if (sa != sb) {
+            return sa - sb;
+        }
+    }
+    return 0;
+}
+
+// 第四局：每人使用剩下的 3 张牌按牌型大小比牌，牌型最小的玩家扣 4 分
 void round4(Game *game) {
     logMsg("\n==================== 第 4 局 ====================\n");
-    logMsg("规则：每人轮流打出剩余 3 张牌，总点数最小者扣 4 分。\n");
+    logMsg("规则：每人轮流打出剩余 3 张牌，按牌型比较大小，牌型最小者扣 4 分。\n");
+    logMsg("牌型从大到小：三条 > 同花顺 > 同花 > 顺子 > 对子 > 散牌。\n");
 
-    int sum[MAX_PLAYERS];
+    HandRank ranks[MAX_PLAYERS];
     int loserIndex = -1;
-    int minSum = 999;
 
     for (int i = 0; i < game->playerCount; i++) {
         Player *p = &game->players[i];
-        sum[i] = -1;
 
         if (p->cardCount < 3) {
             logMsg("  %s 手牌不足 3 张，本局不参与。\n", p->name);
@@ -361,7 +472,6 @@ void round4(Game *game) {
         Card c2 = p->hand[1];
         Card c3 = p->hand[2];
         int total = c1.value + c2.value + c3.value;
-        sum[i] = total;
 
         logMsg("  %s 打出三张：", p->name);
         printCard(c1);
@@ -371,19 +481,23 @@ void round4(Game *game) {
         printCard(c3);
         logMsg(" = %d\n", total);
 
+        ranks[i] = evaluateThreeCardHand(p->hand);
+        logMsg("  %s 的牌型：%s\n", p->name,
+               handTypeName(ranks[i].type));
+
         removeFrontCards(p, 3);
         showHand(p, "  出牌后手牌：");
 
-        if (total < minSum) {
-            minSum = total;
+        if (loserIndex == -1 ||
+            compareThreeCardHands(&ranks[i], &ranks[loserIndex]) < 0) {
             loserIndex = i;
         }
     }
 
     if (loserIndex != -1) {
         Player *loser = &game->players[loserIndex];
-        logMsg("\n结算：%s 的三张牌总和最小（%d），扣 4 分。\n",
-               loser->name, minSum);
+        logMsg("\n结算：按牌型大小比较，%s 的牌型最小（%s），扣 4 分。\n",
+               loser->name, handTypeName(ranks[loserIndex].type));
         loser->score -= 4;
         logMsg("  %s 当前分数：%d\n", loser->name, loser->score);
     } else {
@@ -411,7 +525,7 @@ int main() {
     game.actionNo = 0;
 
     logMsg("========================================\n");
-    logMsg("欢迎来到纸牌小游戏（自动轮流出牌 + 详细日志版）！\n");
+    logMsg("欢迎来到纸牌小游戏（自动轮流出牌 + 牌型比较 + 详细日志版）！\n");
     logMsg("========================================\n");
 
     time_t now = time(NULL);
