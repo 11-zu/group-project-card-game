@@ -1,0 +1,571 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <string.h>
+
+#define MAX_PLAYERS 4
+#define HAND_SIZE 10
+#define MAX_CARD 52
+#define FINAL_HAND_SIZE 5
+
+typedef enum { HEART = 0, SPADE, CLUB, DIAMOND } Suit;
+
+typedef struct {
+    int value;
+    Suit suit;
+} Card;
+
+typedef struct {
+    char name[16];
+    Card hand[HAND_SIZE];
+    int cardCount;
+    int score;
+} Player;
+
+typedef struct {
+    Player players[MAX_PLAYERS];
+    int playerCount;
+    Card deck[MAX_CARD];
+} Game;
+
+typedef struct {
+    int rank;
+    int tieBreak[FINAL_HAND_SIZE];
+} HandRank;
+
+void printCard(Card card) {
+    const char *suitName[] = {"H", "S", "C", "D"};
+    printf("%s%d", suitName[card.suit], card.value);
+}
+
+void printHand(Player *player) {
+    printf("%s 的手牌：", player->name);
+
+    for (int i = 0; i < player->cardCount; i++) {
+        printCard(player->hand[i]);
+        printf("  ");
+    }
+
+    printf("\n");
+}
+
+void initDeck(Game *game) {
+    int index = 0;
+
+    for (int suit = HEART; suit <= DIAMOND; suit++) {
+        for (int value = 1; value <= 13; value++) {
+            game->deck[index].value = value;
+            game->deck[index].suit = (Suit)suit;
+            index++;
+        }
+    }
+}
+
+void shuffleDeck(Game *game) {
+    for (int i = MAX_CARD - 1; i > 0; i--) {
+        int randomIndex = rand() % (i + 1);
+
+        Card temp = game->deck[i];
+        game->deck[i] = game->deck[randomIndex];
+        game->deck[randomIndex] = temp;
+    }
+}
+
+void dealCards(Game *game) {
+    int index = 0;
+
+    for (int i = 0; i < game->playerCount; i++) {
+        game->players[i].cardCount = 0;
+        game->players[i].score = 0;
+
+        for (int j = 0; j < HAND_SIZE; j++) {
+            game->players[i].hand[game->players[i].cardCount++] =
+                game->deck[index++];
+        }
+    }
+}
+
+void removeFrontCards(Player *player, int count) {
+    if (count <= 0 || count > player->cardCount) {
+        return;
+    }
+
+    for (int i = 0; i + count < player->cardCount; i++) {
+        player->hand[i] = player->hand[i + count];
+    }
+
+    player->cardCount -= count;
+}
+
+void discardOneCard(Player *player, int index) {
+    if (index < 0 || index >= player->cardCount) {
+        return;
+    }
+
+    for (int i = index; i < player->cardCount - 1; i++) {
+        player->hand[i] = player->hand[i + 1];
+    }
+
+    player->cardCount--;
+}
+
+void sortPlayersByScore(Player players[], int count) {
+    for (int i = 0; i < count - 1; i++) {
+        for (int j = i + 1; j < count; j++) {
+            if (players[i].score < players[j].score) {
+                Player temp = players[i];
+                players[i] = players[j];
+                players[j] = temp;
+            }
+        }
+    }
+}
+
+void sortDescending(int values[], int count) {
+    for (int i = 0; i < count - 1; i++) {
+        for (int j = i + 1; j < count; j++) {
+            if (values[i] < values[j]) {
+                int temp = values[i];
+                values[i] = values[j];
+                values[j] = temp;
+            }
+        }
+    }
+}
+
+int isFlush(const Card cards[]) {
+    for (int i = 1; i < FINAL_HAND_SIZE; i++) {
+        if (cards[i].suit != cards[0].suit) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+int straightHigh(const Card cards[]) {
+    int values[FINAL_HAND_SIZE];
+
+    for (int i = 0; i < FINAL_HAND_SIZE; i++) {
+        values[i] = cards[i].value;
+    }
+
+    sortDescending(values, FINAL_HAND_SIZE);
+
+    int consecutive = 1;
+
+    for (int i = 1; i < FINAL_HAND_SIZE; i++) {
+        if (values[i] == values[i - 1] - 1) {
+            consecutive++;
+        } else if (values[i] != values[i - 1]) {
+            consecutive = 1;
+        }
+    }
+
+    if (consecutive == FINAL_HAND_SIZE) {
+        return values[0];
+    }
+
+    /*
+     * A、2、3、4、5 是最小顺子。
+     * 这里将 A 的牌值 1 处理为 13。
+     */
+    if (values[0] == 13 &&
+        values[1] == 4 &&
+        values[2] == 3 &&
+        values[3] == 2 &&
+        values[4] == 1) {
+        return 4;
+    }
+
+    return 0;
+}
+
+const char *handRankName(int rank) {
+    const char *names[] = {
+        "高牌",
+        "对子",
+        "两对",
+        "三条",
+        "顺子",
+        "同花",
+        "葫芦",
+        "四条",
+        "同花顺"
+    };
+
+    return names[rank];
+}
+
+/*
+ * 牌型等级：
+ *
+ * 0：高牌
+ * 1：对子
+ * 2：两对
+ * 3：三条
+ * 4：顺子
+ * 5：同花
+ * 6：葫芦
+ * 7：四条
+ * 8：同花顺
+ */
+HandRank evaluateHand(const Card cards[]) {
+    int counts[14] = {0};
+    int values[FINAL_HAND_SIZE];
+
+    int flush = isFlush(cards);
+    int highStraight = straightHigh(cards);
+
+    HandRank result = {
+        0,
+        {0, 0, 0, 0, 0}
+    };
+
+    for (int i = 0; i < FINAL_HAND_SIZE; i++) {
+        counts[cards[i].value]++;
+        values[i] = cards[i].value;
+    }
+
+    sortDescending(values, FINAL_HAND_SIZE);
+
+    /* 同花顺 */
+    if (flush && highStraight) {
+        result.rank = 8;
+        result.tieBreak[0] = highStraight;
+        return result;
+    }
+
+    /* 四条 */
+    for (int value = 13; value >= 1; value--) {
+        if (counts[value] == 4) {
+            result.rank = 7;
+            result.tieBreak[0] = value;
+
+            for (int i = 0; i < FINAL_HAND_SIZE; i++) {
+                if (values[i] != value) {
+                    result.tieBreak[1] = values[i];
+                }
+            }
+
+            return result;
+        }
+    }
+
+    /* 葫芦 */
+    for (int value = 13; value >= 1; value--) {
+        if (counts[value] == 3) {
+            for (int pair = 13; pair >= 1; pair--) {
+                if (pair != value && counts[pair] == 2) {
+                    result.rank = 6;
+                    result.tieBreak[0] = value;
+                    result.tieBreak[1] = pair;
+                    return result;
+                }
+            }
+        }
+    }
+
+    /* 同花 */
+    if (flush) {
+        result.rank = 5;
+
+        for (int i = 0; i < FINAL_HAND_SIZE; i++) {
+            result.tieBreak[i] = values[i];
+        }
+
+        return result;
+    }
+
+    /* 顺子 */
+    if (highStraight) {
+        result.rank = 4;
+        result.tieBreak[0] = highStraight;
+        return result;
+    }
+
+    /* 三条 */
+    for (int value = 13; value >= 1; value--) {
+        if (counts[value] == 3) {
+            result.rank = 3;
+            result.tieBreak[0] = value;
+
+            int index = 1;
+
+            for (int i = 0; i < FINAL_HAND_SIZE; i++) {
+                if (values[i] != value) {
+                    result.tieBreak[index++] = values[i];
+                }
+            }
+
+            return result;
+        }
+    }
+
+    int pairCount = 0;
+
+    for (int value = 13; value >= 1; value--) {
+        if (counts[value] == 2) {
+            result.tieBreak[pairCount++] = value;
+        }
+    }
+
+    /* 两对 */
+    if (pairCount == 2) {
+        result.rank = 2;
+
+        for (int i = 0; i < FINAL_HAND_SIZE; i++) {
+            if (counts[values[i]] == 1) {
+                result.tieBreak[2] = values[i];
+            }
+        }
+
+        return result;
+    }
+
+    /* 一对 */
+    if (pairCount == 1) {
+        result.rank = 1;
+
+        int pair = result.tieBreak[0];
+        int index = 1;
+
+        for (int i = 0; i < FINAL_HAND_SIZE; i++) {
+            if (values[i] != pair) {
+                result.tieBreak[index++] = values[i];
+            }
+        }
+
+        return result;
+    }
+
+    /* 高牌 */
+    result.rank = 0;
+
+    for (int i = 0; i < FINAL_HAND_SIZE; i++) {
+        result.tieBreak[i] = values[i];
+    }
+
+    return result;
+}
+
+int compareHandRank(HandRank left, HandRank right) {
+    if (left.rank != right.rank) {
+        return left.rank - right.rank;
+    }
+
+    for (int i = 0; i < FINAL_HAND_SIZE; i++) {
+        if (left.tieBreak[i] != right.tieBreak[i]) {
+            return left.tieBreak[i] - right.tieBreak[i];
+        }
+    }
+
+    return 0;
+}
+
+void printFiveCards(const Card cards[]) {
+    for (int i = 0; i < FINAL_HAND_SIZE; i++) {
+        printCard(cards[i]);
+        printf(" ");
+    }
+}
+
+/* 第一局：每人出一张牌，最小的扣一分 */
+void round1(Game *game) {
+    printf("\n===== 第 1 局：每人出 1 张牌，最小的扣 1 分 =====\n");
+
+    int minValue = 999;
+
+    for (int i = 0; i < game->playerCount; i++) {
+        Card card = game->players[i].hand[0];
+
+        printf("%s 出：", game->players[i].name);
+        printCard(card);
+        printf("\n");
+
+        if (card.value < minValue) {
+            minValue = card.value;
+        }
+    }
+
+    for (int i = 0; i < game->playerCount; i++) {
+        if (game->players[i].hand[0].value == minValue) {
+            game->players[i].score--;
+        }
+
+        removeFrontCards(&game->players[i], 1);
+    }
+}
+
+/* 第二局：每人出一张牌，最大的扣一分 */
+void round2(Game *game) {
+    printf("\n===== 第 2 局：每人出 1 张牌，最大的扣 1 分 =====\n");
+
+    int maxValue = -1;
+
+    for (int i = 0; i < game->playerCount; i++) {
+        Card card = game->players[i].hand[0];
+
+        printf("%s 出：", game->players[i].name);
+        printCard(card);
+        printf("\n");
+
+        if (card.value > maxValue) {
+            maxValue = card.value;
+        }
+    }
+
+    for (int i = 0; i < game->playerCount; i++) {
+        if (game->players[i].hand[0].value == maxValue) {
+            game->players[i].score--;
+        }
+
+        removeFrontCards(&game->players[i], 1);
+    }
+}
+
+/* 第三局：21点，每人出两张牌 */
+void round3(Game *game) {
+    printf("\n===== 第 3 局：21 点，每人出 2 张牌 =====\n");
+
+    int bestIndex = -1;
+    int bestScore = -1;
+
+    for (int i = 0; i < game->playerCount; i++) {
+        int total =
+            game->players[i].hand[0].value +
+            game->players[i].hand[1].value;
+
+        printf("%s 点数：%d\n", game->players[i].name, total);
+
+        if (total <= 21 && total > bestScore) {
+            bestIndex = i;
+            bestScore = total;
+        }
+    }
+
+    for (int i = 0; i < game->playerCount; i++) {
+        if (bestIndex == -1 || i != bestIndex) {
+            game->players[i].score -= 2;
+        }
+
+        removeFrontCards(&game->players[i], 2);
+    }
+
+    if (bestIndex == -1) {
+        printf("本轮无人不超过 21，所有玩家扣 2 分。\n");
+    } else {
+        printf(
+            "本轮赢家：%s，点数为 %d\n",
+            game->players[bestIndex].name,
+            bestScore
+        );
+    }
+}
+
+/*
+ * 第四局：使用最后五张牌比较牌型。
+ * 牌型较小的玩家扣 4 分。
+ */
+void round4(Game *game) {
+    printf("\n===== 第 4 局：五张牌牌型比较，牌型小者扣 4 分 =====\n");
+
+    int loserIndex = -1;
+    HandRank loserRank = {
+        99,
+        {0, 0, 0, 0, 0}
+    };
+
+    for (int i = 0; i < game->playerCount; i++) {
+        Card *cards = &game->players[i].hand[0];
+        HandRank currentRank = evaluateHand(cards);
+
+        printf("%s：", game->players[i].name);
+        printFiveCards(cards);
+        printf("[%s]\n", handRankName(currentRank.rank));
+
+        if (loserIndex == -1 ||
+            compareHandRank(currentRank, loserRank) < 0) {
+            loserIndex = i;
+            loserRank = currentRank;
+        }
+    }
+
+    if (loserIndex != -1) {
+        game->players[loserIndex].score -= 4;
+
+        printf(
+            "本轮输家：%s，扣 4 分\n",
+            game->players[loserIndex].name
+        );
+    }
+}
+
+int main(void) {
+    srand((unsigned)time(NULL));
+
+    Game game;
+
+    printf("欢迎来到纸牌小游戏！\n");
+    printf("请输入玩家人数（2~4）：");
+
+    if (scanf("%d", &game.playerCount) != 1 ||
+        game.playerCount < 2 ||
+        game.playerCount > MAX_PLAYERS) {
+        printf("玩家人数必须在 2 到 4 之间！\n");
+        return 1;
+    }
+
+    for (int i = 0; i < game.playerCount; i++) {
+        printf("请输入第 %d 个玩家名字：", i + 1);
+        scanf("%15s", game.players[i].name);
+    }
+
+    initDeck(&game);
+    shuffleDeck(&game);
+    dealCards(&game);
+
+    printf("\n发牌完成，开始弃牌阶段。\n");
+
+    for (int i = 0; i < game.playerCount; i++) {
+        printHand(&game.players[i]);
+
+        int discardIndex = game.players[i].cardCount - 1;
+        int input;
+
+        printf(
+            "%s 选择弃掉第 %d 张牌（输入 0~%d，默认最后一张）：",
+            game.players[i].name,
+            discardIndex + 1,
+            discardIndex
+        );
+
+        if (scanf("%d", &input) == 1 &&
+            input >= 0 &&
+            input < game.players[i].cardCount) {
+            discardIndex = input;
+        }
+
+        discardOneCard(&game.players[i], discardIndex);
+    }
+
+    round1(&game);
+    round2(&game);
+    round3(&game);
+    round4(&game);
+
+    printf("\n===== 最终排名 =====\n");
+
+    sortPlayersByScore(game.players, game.playerCount);
+
+    for (int i = 0; i < game.playerCount; i++) {
+        printf(
+            "%d. %s  分数：%d\n",
+            i + 1,
+            game.players[i].name,
+            game.players[i].score
+        );
+    }
+
+    return 0;
+}
