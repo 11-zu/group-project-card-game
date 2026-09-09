@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>纸牌对决</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div>
+          <h1>纸牌对决</h1>
+          <p>四轮规则：小牌扣分、比牌扣分、21 点、三张牌比大小</p>
+        </div>
+        <div class="controls">
+          <label for="playerCount">玩家人数</label>
+          <select id="playerCount">
+            <option value="2">2 人</option>
+            <option value="3">3 人</option>
+            <option value="4" selected>4 人</option>
+          </select>
+          <button id="startBtn">开始游戏</button>
+          <button id="resetBtn" class="secondary-btn">重置</button>
+        </div>
+      </header>
+
+      <div id="nameInputs" class="name-inputs"></div>
+
+      <main class="main">
+        <section class="panel">
+          <h2>玩家状态</h2>
+          <div id="players" class="players"></div>
+        </section>
+
+        <section class="panel log-panel">
+          <h2>详细日志</h2>
+          <div id="log" class="log"></div>
+        </section>
+      </main>
+
+      <section id="turnPanel" class="panel turn-panel hidden">
+        <h2 id="turnTitle">回合行动</h2>
+        <div id="turnMessage" class="turn-message"></div>
+        <div id="choiceArea" class="choice-area"></div>
+        <button id="actionBtn">确认</button>
+      </section>
+    </div>
+
+    <div id="resultModal" class="modal hidden">
+      <div class="modal-box">
+        <h3>本局结果</h3>
+        <div id="resultContent"></div>
+        <button id="closeModalBtn">再来一局</button>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>

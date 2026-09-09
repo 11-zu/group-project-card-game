@@ -20,6 +20,26 @@ typedef struct {
     Suit suit;
 } Card;
 
+int compareCardValue(Card a, Card b) {
+    if (a.value != b.value) {
+        return a.value < b.value ? -1 : 1;
+    }
+    if (a.suit != b.suit) {
+        return a.suit < b.suit ? -1 : 1;
+    }
+    return 0;
+}
+
+int get21CardValue(Card card) {
+    if (card.value == 1) return 1;
+    if (card.value >= 11) return 10;
+    return card.value;
+}
+
+void printLog(const char *message) {
+    printf("[LOG] %s\n", message);
+}
+
 typedef struct {
     char name[16];
     Card hand[HAND_SIZE];
@@ -116,26 +136,31 @@ void sortPlayersByScore(Player players[], int n) {
 void round1(Game *game) {
     printf("\n===== 第 1 局：每人出 1 张牌，最小的扣 1 分 =====\n");
 
-    int minValue = 999;
+    int minIndex = 0;
+    Card minCard = game->players[0].hand[0];
+
     for (int i = 0; i < game->playerCount; i++) {
         if (game->players[i].cardCount < 1) continue;
 
         Card c = game->players[i].hand[0];
-        printf("%s 出：", game->players[i].name);
+        printf("%s 自动出牌：", game->players[i].name);
         printCard(c);
         printf("\n");
 
-        if (c.value < minValue) {
-            minValue = c.value;
+        if (compareCardValue(c, minCard) < 0) {
+            minCard = c;
+            minIndex = i;
         }
     }
 
-    printf("本轮最小牌值：%d\n", minValue);
+    printf("本轮最小牌为：");
+    printCard(minCard);
+    printf("，%s 扣 1 分\n", game->players[minIndex].name);
 
     for (int i = 0; i < game->playerCount; i++) {
-        if (game->players[i].cardCount >= 1 && game->players[i].hand[0].value == minValue) {
+        if (i != minIndex && game->players[i].cardCount >= 1) {
             game->players[i].score -= 1;
-            printf("%s 扣 1 分\n", game->players[i].name);
+            printf("%s 轮到出牌，因牌大于最小牌，扣 1 分\n", game->players[i].name);
         }
     }
 
@@ -150,28 +175,34 @@ void round1(Game *game) {
 void round2(Game *game) {
     printf("\n===== 第 2 局：每人出 1 张牌，最大的扣 1 分 =====\n");
 
-    int maxValue = -1;
+    int maxIndex = 0;
+    Card maxCard = game->players[0].hand[0];
+
     for (int i = 0; i < game->playerCount; i++) {
         if (game->players[i].cardCount < 1) continue;
 
         Card c = game->players[i].hand[0];
-        printf("%s 出：", game->players[i].name);
+        printf("%s 自动出牌：", game->players[i].name);
         printCard(c);
         printf("\n");
 
-        if (c.value > maxValue) {
-            maxValue = c.value;
+        if (compareCardValue(c, maxCard) > 0) {
+            maxCard = c;
+            maxIndex = i;
         }
     }
 
-    printf("本轮最大牌值：%d\n", maxValue);
+    printf("本轮最大牌为：");
+    printCard(maxCard);
+    printf("，%s 扣 1 分\n", game->players[maxIndex].name);
 
     for (int i = 0; i < game->playerCount; i++) {
-        if (game->players[i].cardCount >= 1 && game->players[i].hand[0].value == maxValue) {
-            game->players[i].score -= 1;
-            printf("%s 扣 1 分\n", game->players[i].name);
+        if (i != maxIndex && game->players[i].cardCount >= 1) {
+            game->players[i].score += 0;
         }
     }
+
+    game->players[maxIndex].score -= 1;
 
     for (int i = 0; i < game->playerCount; i++) {
         if (game->players[i].cardCount >= 1) {
@@ -181,13 +212,6 @@ void round2(Game *game) {
 }
 
 // 第三局：21 点，每人出两张牌，最接近 21 且不超过 21 的玩家获胜，其他玩家扣 2 分
-int get21CardValue(Card card) {
-    if (card.value >= 11) {
-        return 10;   // J、Q、K 视为 10
-    }
-    return card.value; // A 视为 1，2~10 按原值
-}
-
 void round3(Game *game) {
     printf("\n===== 第 3 局：21 点，每人出 2 张牌 =====\n");
 
@@ -201,7 +225,7 @@ void round3(Game *game) {
         int total = get21CardValue(game->players[i].hand[0]) +
                     get21CardValue(game->players[i].hand[1]);
 
-        printf("%s 的两张牌：", game->players[i].name);
+        printf("%s 自动出牌：", game->players[i].name);
         printCard(game->players[i].hand[0]);
         printf(" + ");
         printCard(game->players[i].hand[1]);
