@@ -180,17 +180,26 @@ void round2(Game *game) {
     }
 }
 
-// 第三局：21点，每人出两张牌，最接近21且不超过21的赢，其他人扣2分
+// 第三局：21 点，每人出两张牌，最接近 21 且不超过 21 的玩家获胜，其他玩家扣 2 分
+int get21CardValue(Card card) {
+    if (card.value >= 11) {
+        return 10;   // J、Q、K 视为 10
+    }
+    return card.value; // A 视为 1，2~10 按原值
+}
+
 void round3(Game *game) {
     printf("\n===== 第 3 局：21 点，每人出 2 张牌 =====\n");
 
     int bestIndex = -1;
     int bestScore = -1;
+    int validCount = 0;
 
     for (int i = 0; i < game->playerCount; i++) {
         if (game->players[i].cardCount < 2) continue;
 
-        int total = game->players[i].hand[0].value + game->players[i].hand[1].value;
+        int total = get21CardValue(game->players[i].hand[0]) +
+                    get21CardValue(game->players[i].hand[1]);
 
         printf("%s 的两张牌：", game->players[i].name);
         printCard(game->players[i].hand[0]);
@@ -198,17 +207,21 @@ void round3(Game *game) {
         printCard(game->players[i].hand[1]);
         printf(" = %d\n", total);
 
-        if (total <= 21 && (bestIndex == -1 || total > bestScore)) {
-            bestIndex = i;
-            bestScore = total;
+        if (total <= 21) {
+            validCount++;
+            if (bestIndex == -1 || total > bestScore) {
+                bestIndex = i;
+                bestScore = total;
+            }
         }
     }
 
-    if (bestIndex == -1) {
-        printf("本轮无人不超过 21，所有玩家扣 2 分。\n");
+    if (validCount == 0) {
+        printf("本轮没有人不超过 21，所有玩家扣 2 分。\n");
         for (int i = 0; i < game->playerCount; i++) {
             if (game->players[i].cardCount >= 2) {
                 game->players[i].score -= 2;
+                printf("%s 扣 2 分\n", game->players[i].name);
             }
         }
     } else {
